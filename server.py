@@ -63,6 +63,8 @@ class MyWebServer(socketserver.BaseRequestHandler):
                 requested_path += 'index.html'
 
             # Decide mimetype based on file ending or redirect with / ending
+            # refer to this page for mimetypes: 
+            #   https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types
             mimetype = 'text/html'
             if (requested_path.endswith('.html')):
                 mimetype = 'text/html'
@@ -93,23 +95,19 @@ class MyWebServer(socketserver.BaseRequestHandler):
                 return
 
             # within /www and file/dir exists
-            # refer to this page for mimetypes: 
-            # https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types
             header = 'HTTP/1.1 200 OK\r\n'
             
             if(mimetype):
                 header += 'Content-Type: %s\r\n\r\n' % mimetype
 
-                try:
-                    self.request.sendall(bytearray(header, 'utf-8'))
-                    
+                try:                    
                     # read file as bytes
                     # Stolen from Jeremy: https://stackoverflow.com/users/1114/jeremy
                     # From https://stackoverflow.com/a/6787259
                     file = open(file_path, 'rb')
                     lines = file.read()
                     file.close()
-                    self.request.sendall(lines)
+                    self.request.sendall(bytearray(header, 'utf-8') + lines)
                 except:
                     status = '500 Internal Server Error'
                     self.request.sendall(bytearray(self.response(status), 'utf-8'))
