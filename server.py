@@ -1,5 +1,9 @@
 #  coding: utf-8 
 import socketserver
+import json
+import zlib
+
+import os
 
 # Copyright 2013 Abram Hindle, Eddie Antonio Santos
 # 
@@ -26,17 +30,79 @@ import socketserver
 
 # try: curl -v -X GET http://127.0.0.1:8080/
 
-
 class MyWebServer(socketserver.BaseRequestHandler):
+
+    def not_accessable(self, file_path):
+        print('file path abspath: %s' % os.path.abspath(file_path))
+        print('www path abspath: %s' % os.path.abspath('./www'))
+        print('within www?: %s\n' % os.path.abspath(file_path).startswith(os.path.abspath('./www')))
+
+        return not os.path.abspath(file_path).startswith(os.path.abspath('./www'))
     
+    def html_response(self, response):
+        return (
+            '<HTML><HEAD><meta http-equiv="content-type" content="text/html;charset=utf-8">'
+            '<TITLE>%s</TITLE></HEAD><BODY>'
+            '<H1>%s</H1>'
+            '</BODY></HTML>' % (response, response)
+        )
+
     def handle(self):
         self.data = self.request.recv(1024).strip()
-        print ("Got a request of: %s\n" % self.data)
-        self.request.sendall(bytearray("OK",'utf-8'))
+        print('Got a request of: %s\n' % self.data)
+
+        data = self.data.decode('utf-8')
+
+        if len(data) > 0:
+            # Get info from request
+            request = data.split('\r\n')[0].split()
+            method = request[0]
+            requested_path = request[1].rstrip('//')
+
+            if requested_path == '/':
+                requested_path = '/index.html'
+            print('request_path', requested_path)
+
+            file_path = './www%s' % requested_path
+
+            if(self.not_accessable(file_path)): # not within /www
+                header = 'HTTP/1.1 403 Forbidden\r\n\r\n'
+                response = header + self.html_response('403 Forbidden')
+                self.request.sendall(bytearray(response, 'utf-8'))
+                return
+            
+            if(not os.path.exists(file_path)): # within /www and file DNE 
+                header = 'HTTP/1.1 404 Not Found\r\n\r\n'
+                response = header + self.html_response('404 Not Found')
+                self.request.sendall(bytearray(response, 'utf-8'))
+                return
+
+            # within /www and file/dir exists
+            if(requested_path == '/deep'):
+                header = (
+                    'HTTP/1.1 301 Moved Permanently\n'
+                    'Location: http://127.0.0.1:8080/deep/index.html\r\n\r\n'
+                )
+                response = header + self.html_response('301 Moved Permanently')
+                self.request.sendall(bytearray(response, 'utf-8'))
+            else:
+                # refer to this page for mimetypes: 
+                # https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types
+                header = 'HTTP/1.1 200 OK\r\n'
+                mimetype = 'text/html'
+                if (requested_path.endswith('.css')):
+                    mimetype = 'text/css'
+                header += 'Content-Type: %s\r\n\r\n' % mimetype
+
+                self.request.sendall(bytearray(header, 'utf-8'))
+                file = open(file_path, 'r')
+                lines = file.readlines() 
+                for l in lines:
+                    self.request.sendall(bytearray(l,'utf-8'))                     
+                    
 
 if __name__ == "__main__":
     HOST, PORT = "localhost", 8080
-
     socketserver.TCPServer.allow_reuse_address = True
     # Create the server, binding to localhost on port 8080
     server = socketserver.TCPServer((HOST, PORT), MyWebServer)
