@@ -57,21 +57,33 @@ class MyWebServer(socketserver.BaseRequestHandler):
             # Get info from request
             request = data.split('\r\n')[0].split()
             method = request[0]
-            requested_path = request[1].rstrip('//')
+            requested_path = request[1]
 
-            if requested_path == '/':
-                requested_path = '/index.html'
+            root_dirs = ['/', '/deep/']
+            if requested_path in root_dirs:
+                requested_path += 'index.html'
+            else:
+                requested_path.rstrip('//')
             print('request_path', requested_path)
 
             file_path = './www%s' % requested_path
 
-            if(self.not_accessable(file_path)): # not within /www
-                header = 'HTTP/1.1 403 Forbidden\r\n\r\n'
-                response = header + self.html_response('403 Forbidden')
+            # wrong method
+            if (method not in ['GET']):
+                header = 'HTTP/1.1 405 Method not allowed\r\n\r\n'
+                response = header + self.html_response('405 Method not allowed')
+                self.request.sendall(bytearray(response, 'utf-8'))
+                return
+
+            # not within /www
+            if(self.not_accessable(file_path)):
+                header = 'HTTP/1.1 404 Not Found\r\n\r\n'
+                response = header + self.html_response('404 Not Found')
                 self.request.sendall(bytearray(response, 'utf-8'))
                 return
             
-            if(not os.path.exists(file_path)): # within /www and file DNE 
+            # within /www and file DNE 
+            if(not os.path.exists(file_path)):
                 header = 'HTTP/1.1 404 Not Found\r\n\r\n'
                 response = header + self.html_response('404 Not Found')
                 self.request.sendall(bytearray(response, 'utf-8'))
@@ -81,7 +93,7 @@ class MyWebServer(socketserver.BaseRequestHandler):
             if(requested_path == '/deep'):
                 header = (
                     'HTTP/1.1 301 Moved Permanently\n'
-                    'Location: http://127.0.0.1:8080/deep/index.html\r\n\r\n'
+                    'Location: http://127.0.0.1:8080/deep/\r\n\r\n'
                 )
                 response = header + self.html_response('301 Moved Permanently')
                 self.request.sendall(bytearray(response, 'utf-8'))
@@ -94,12 +106,20 @@ class MyWebServer(socketserver.BaseRequestHandler):
                     mimetype = 'text/css'
                 header += 'Content-Type: %s\r\n\r\n' % mimetype
 
-                self.request.sendall(bytearray(header, 'utf-8'))
-                file = open(file_path, 'r')
-                lines = file.readlines() 
-                for l in lines:
-                    self.request.sendall(bytearray(l,'utf-8'))                     
+                try:
+                    self.request.sendall(bytearray(header, 'utf-8'))
                     
+                    # read file as bytes
+                    # Stolen from Jeremy: https://stackoverflow.com/users/1114/jeremy
+                    # From https://stackoverflow.com/a/6787259
+                    file = open(file_path, 'rb')
+                    lines = file.read()
+                    file.close()
+                    self.request.sendall(lines)
+                except:
+                    header = 'HTTP/1.1 500 Internal Server Error\r\n\r\n'
+                    response = header + self.html_response('500 Internal Server Error')
+                    self.request.sendall(bytearray(response, 'utf-8'))
 
 if __name__ == "__main__":
     HOST, PORT = "localhost", 8080
