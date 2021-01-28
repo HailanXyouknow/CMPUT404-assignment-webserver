@@ -33,10 +33,6 @@ import os
 class MyWebServer(socketserver.BaseRequestHandler):
 
     def not_accessable(self, file_path):
-        print('file path abspath: %s' % os.path.abspath(file_path))
-        print('www path abspath: %s' % os.path.abspath('./www'))
-        print('within www?: %s\n' % os.path.abspath(file_path).startswith(os.path.abspath('./www')))
-
         return not os.path.abspath(file_path).startswith(os.path.abspath('./www'))
     
     def html_response(self, response):
@@ -46,6 +42,10 @@ class MyWebServer(socketserver.BaseRequestHandler):
             '<H1>%s</H1>'
             '</BODY></HTML>' % (response, response)
         )
+
+    def response(self, status):
+        header = 'HTTP/1.1 %s\r\n\r\n' % status
+        return header + self.html_response(status)
 
     def handle(self):
         self.data = self.request.recv(1024).strip()
@@ -59,51 +59,45 @@ class MyWebServer(socketserver.BaseRequestHandler):
             method = request[0]
             requested_path = request[1]
 
-            root_dirs = ['/', '/deep/']
-            if requested_path in root_dirs:
+            if requested_path.endswith('/'):
                 requested_path += 'index.html'
+
+            # Decide mimetype based on file ending or redirect with / ending
+            mimetype = 'text/html'
+            if (requested_path.endswith('.html')):
+                mimetype = 'text/html'
+            elif (requested_path.endswith('.css')):
+                mimetype = 'text/css'
             else:
-                requested_path.rstrip('//')
-            print('request_path', requested_path)
+                status = '301 Moved Permanently'
+                header = (
+                    'HTTP/1.1 %s\n'
+                    'Location: http://127.0.0.1:8080%s/\r\n\r\n' % (status, requested_path)
+                )
+                response = header + self.html_response(status)
+                self.request.sendall(bytearray(response, 'utf-8'))
+                return
 
             file_path = './www%s' % requested_path
 
             # wrong method
             if (method not in ['GET']):
-                header = 'HTTP/1.1 405 Method not allowed\r\n\r\n'
-                response = header + self.html_response('405 Method not allowed')
-                self.request.sendall(bytearray(response, 'utf-8'))
+                status = '405 Method not allowed'
+                self.request.sendall(bytearray(self.response(status), 'utf-8'))
                 return
 
-            # not within /www
-            if(self.not_accessable(file_path)):
-                header = 'HTTP/1.1 404 Not Found\r\n\r\n'
-                response = header + self.html_response('404 Not Found')
-                self.request.sendall(bytearray(response, 'utf-8'))
-                return
-            
-            # within /www and file DNE 
-            if(not os.path.exists(file_path)):
-                header = 'HTTP/1.1 404 Not Found\r\n\r\n'
-                response = header + self.html_response('404 Not Found')
-                self.request.sendall(bytearray(response, 'utf-8'))
+            # not within /www OR file does not exist
+            if(self.not_accessable(file_path) or not os.path.exists(file_path)):
+                status = '404 Not Found'
+                self.request.sendall(bytearray(self.response(status), 'utf-8'))
                 return
 
             # within /www and file/dir exists
-            if(requested_path == '/deep'):
-                header = (
-                    'HTTP/1.1 301 Moved Permanently\n'
-                    'Location: http://127.0.0.1:8080/deep/\r\n\r\n'
-                )
-                response = header + self.html_response('301 Moved Permanently')
-                self.request.sendall(bytearray(response, 'utf-8'))
-            else:
-                # refer to this page for mimetypes: 
-                # https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types
-                header = 'HTTP/1.1 200 OK\r\n'
-                mimetype = 'text/html'
-                if (requested_path.endswith('.css')):
-                    mimetype = 'text/css'
+            # refer to this page for mimetypes: 
+            # https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types
+            header = 'HTTP/1.1 200 OK\r\n'
+            
+            if(mimetype):
                 header += 'Content-Type: %s\r\n\r\n' % mimetype
 
                 try:
@@ -117,9 +111,8 @@ class MyWebServer(socketserver.BaseRequestHandler):
                     file.close()
                     self.request.sendall(lines)
                 except:
-                    header = 'HTTP/1.1 500 Internal Server Error\r\n\r\n'
-                    response = header + self.html_response('500 Internal Server Error')
-                    self.request.sendall(bytearray(response, 'utf-8'))
+                    status = '500 Internal Server Error'
+                    self.request.sendall(bytearray(self.response(status), 'utf-8'))
 
 if __name__ == "__main__":
     HOST, PORT = "localhost", 8080
